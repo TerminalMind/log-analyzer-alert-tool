@@ -1,98 +1,307 @@
 # Log Analyzer & Alert Tool
 
-An offline Python cybersecurity project that finds suspicious login patterns and creates a browser-readable report. Works on Windows, Linux and macOS with Python 3.10 or newer. Uses only the Python standard library: **no pip installs required**.
+A Python cybersecurity tool that analyzes login logs, detects suspicious activity, and generates detailed reports.
 
-## Quick start
+Built using Python’s standard library—no extra packages required.
 
-Extract the ZIP, open a terminal in the `log-analyzer` folder, then run:
+## Features
 
-```sh
-python log_analyzer.py samples/auth.log --year 2026 --output demo-report
+- Detect repeated failed login attempts.
+- Identify failed logins targeting multiple accounts.
+- Flag successful logins after repeated failures.
+- Detect successful root logins.
+- Support Linux SSH logs and application JSONL logs.
+- Support IPv4 and IPv6 addresses.
+- Generate HTML, CSV, JSON, and SQLite reports.
+- Customize detection thresholds and time windows.
+
+## Technologies Used
+
+- **Python** — parsing, analysis, and command-line interface
+- **Regular Expressions** — SSH log pattern matching
+- **SQLite** — storing alerts
+- **HTML** — browser-readable reports
+- **JSON and CSV** — exporting results
+- **unittest** — automated testing
+
+## Requirements
+
+- Python **3.10 or newer**
+- Windows, Linux, or macOS
+
+No third-party dependencies or `pip install` commands are needed.
+
+## Project Structure
+
+```text
+log-analyzer/
+├── log_analyzer.py
+├── README.md
+├── .gitignore
+├── samples/
+│   ├── auth.log
+│   └── application.jsonl
+└── tests/
+    └── test_analyzer.py
 ```
 
-On Windows you can use `py` instead of `python`; on Linux/macOS use `python3` if needed. Open `demo-report/report.html` in your browser. The sample produces **5 alerts** from 12 login events; one unrelated line is ignored. It uses documentation-only example IP addresses.
+## Getting Started
 
-Output directories must be new to prevent accidental overwrites. For another run, omit `--output` for an automatically named folder under `reports`, or choose another name.
+Download or clone the repository. Open a terminal in the folder containing `log_analyzer.py`.
 
-## Detection rules
+### Windows
 
-| Rule | Default trigger | Severity |
+```powershell
+py log_analyzer.py samples/auth.log --year 2026 --output demo-report
+```
+
+### Linux / macOS
+
+```bash
+python3 log_analyzer.py samples/auth.log --year 2026 --output demo-report
+```
+
+Open the generated report:
+
+```text
+demo-report/report.html
+```
+
+Expected sample summary:
+
+```text
+Parsed: 12 | Ignored: 1 | Malformed: 0 | Alerts: 5
+```
+
+**Note:** The output directory must not already exist. For another run, use a different directory name or omit `--output` to generate a timestamped folder.
+
+The following examples use `python`. Replace it with `py` or `python3` if required.
+
+## Detection Rules
+
+| Rule | Default Trigger | Severity |
 |---|---|---|
-| Repeated failures | 5 failures from the same IP against the same host within 300 seconds, across any usernames | HIGH |
+| Repeated failures | 5 failures from the same IP against the same host within 300 seconds | HIGH |
 | Multiple accounts | Failures for 5 distinct usernames from the same IP against the same host within 300 seconds | HIGH |
-| Success after failures | Success after at least 5 failures for the exact same host, IP and username within 300 seconds | CRITICAL |
+| Success after failures | Successful login after 5 failures for the same host, IP, and username within 300 seconds | CRITICAL |
 | Root login | Any successful login as `root` | MEDIUM |
 
-Windows are inclusive: an event exactly 300 seconds earlier is included. Repeated-failure and multiple-account alerts fire when their threshold is crossed, then rearm after the active window drops below it. A success clears prior failures for that account at that host and IP. A root success can produce both a root alert and a success-after-failures alert. Severity expresses review priority, not confirmed compromise.
+Repeated-failure detection counts failures across usernames.
 
-## Your logs
+Time-window boundaries are inclusive. Repeated-failure and multiple-account alerts are suppressed while their thresholds remain met. They can trigger again after the counts drop below their thresholds.
 
-Copy an SSH authentication log that you have permission to read into this folder:
+A successful login clears the previous failures for that account at the same host and IP.
 
-```sh
+Alerts indicate activity to investigate, not proof of compromise.
+
+## Usage Examples
+
+### Analyze an SSH Log
+
+```bash
 python log_analyzer.py auth.log --year 2026 --utc-offset=+05:30
 ```
 
-For Linux SSH text logs, commonly named `auth.log` or `secure`, supported messages are `Failed` or `Accepted` for password, publickey, or keyboard-interactive authentication. Prefixes may use `Sep 26 10:00:00 server sshd[123]:` or an ISO timestamp such as `2026-09-26T10:00:00+05:30 server sshd[123]:`. IPv4 and IPv6 are supported. Other SSH/PAM formats, web access logs and Windows Event Logs are not currently supported. Unsupported text lines are counted as ignored; malformed supported records are counted separately.
+Set the year and UTC offset to match the log. The example offset is India Standard Time.
 
-Legacy syslog does not contain a year or timezone. Set `--year` and `--utc-offset` correctly. Defaults are current UTC year and UTC. A single invocation uses one supplied year and offset for all timestamps missing that information. For logs spanning New Year or daylight-saving changes, convert timestamps to ISO with explicit offsets before analysis. Reports normalize timestamps to UTC.
+### Customize Detection Settings
 
-Analyze multiple non-overlapping files together:
+```bash
+python log_analyzer.py samples/auth.log --year 2026 --threshold 3 --window 120 --spray-users 3
+```
 
-```sh
+This uses:
+
+- 3 failed attempts as the failure threshold.
+- A 120-second detection window.
+- 3 distinct usernames as the multiple-account threshold.
+
+### Analyze Multiple Files
+
+```bash
 python log_analyzer.py auth-part1.log auth-part2.log --year 2026
 ```
 
-Events are sorted by timestamp; equal timestamps retain input order. Duplicate input paths are rejected, but overlapping file contents are not deduplicated because identical log messages can represent separate attempts. Avoid combining duplicate exports. Events are stored in memory; split very large datasets into sensible batches with enough overlap to cover the detection window, reviewing overlap alerts accordingly.
+Events are sorted by timestamp. Avoid overlapping files because duplicate contents are not removed.
 
-## Application JSONL format
+### Analyze Application Logs
 
-One JSON object per line, with all five fields required:
+```bash
+python log_analyzer.py samples/application.jsonl --threshold 2
+```
+
+### Return Exit Code 1 When Alerts Are Found
+
+```bash
+python log_analyzer.py samples/auth.log --year 2026 --fail-on-alert
+```
+
+### View Help
+
+```bash
+python log_analyzer.py --help
+```
+
+## Command-Line Options
+
+| Option | Description | Default |
+|---|---|---|
+| `logs` | One or more input files | Required |
+| `--threshold` | Failed-login threshold | `5` |
+| `--window` | Detection window in seconds | `300` |
+| `--spray-users` | Distinct failed-user threshold | `5` |
+| `--year` | Year for legacy syslog timestamps | Current UTC year |
+| `--utc-offset` | Offset for timestamps without timezone information | `+00:00` |
+| `--output` | New output directory | Timestamped folder under `reports/` |
+| `--fail-on-alert` | Exit with code `1` when alerts exist | Disabled |
+
+Detection thresholds must be positive integers.
+
+## Supported Log Formats
+
+### SSH Text Logs
+
+Example:
+
+```text
+Sep 26 10:00:00 lab sshd[100]: Failed password for alice from 192.0.2.10 port 51001 ssh2
+Sep 26 10:02:30 lab sshd[105]: Accepted publickey for alice from 192.0.2.10 port 51006 ssh2
+```
+
+ISO timestamps are also supported:
+
+```text
+2026-09-26T10:02:30+05:30 lab sshd[105]: Accepted publickey for alice from 192.0.2.10 port 51006 ssh2
+```
+
+The parser recognizes supported `Failed` and `Accepted` messages for password, publickey, and keyboard-interactive authentication.
+
+Other SSH/PAM formats, web access logs, and Windows Event Logs are not currently supported.
+
+### Application JSONL Logs
+
+Each line must contain a JSON object:
 
 ```json
 {"timestamp":"2026-09-26T10:00:00+05:30","host":"my-app","ip":"192.0.2.50","user":"shivam","status":"failure"}
 ```
 
-`status` must be `failure` or `success`. IP must be a valid address. Host/user must be nonempty strings of up to 255 characters without ASCII control characters. Do not log passwords, tokens, session cookies, or 2FA codes.
+Required fields:
 
-Try the application sample with a lower threshold:
+| Field | Description |
+|---|---|
+| `timestamp` | ISO-format timestamp; include an explicit timezone offset when possible |
+| `host` | Host or application name |
+| `ip` | Valid IPv4 or IPv6 address |
+| `user` | Username |
+| `status` | `failure` or `success` |
 
-```sh
-python log_analyzer.py samples/application.jsonl --threshold 2
+Host and user values must be nonempty strings of up to 255 characters without ASCII control characters.
+
+Never log passwords, tokens, session cookies, or 2FA codes.
+
+## Timestamp Handling
+
+Reports display event times in UTC.
+
+Legacy syslog timestamps do not include a year or timezone. Set `--year` and `--utc-offset` correctly.
+
+For logs spanning New Year or daylight-saving changes, convert timestamps to ISO format with explicit offsets before analysis.
+
+## Generated Reports
+
+```text
+demo-report/
+├── report.html
+├── alerts.csv
+├── alerts.json
+└── alerts.db
 ```
 
-## Customize
+| File | Purpose |
+|---|---|
+| `report.html` | View alerts in a browser |
+| `alerts.csv` | Open alerts in a spreadsheet |
+| `alerts.json` | Read alerts, analysis settings, and parsing counts |
+| `alerts.db` | Query alerts using SQLite |
 
-```sh
-python log_analyzer.py samples/auth.log --year 2026 --threshold 3 --window 120 --spray-users 3
-python log_analyzer.py --help
-```
+The database is a separate snapshot for each run. It does not maintain a continuous alert history.
 
-`--window` is in seconds. All detection thresholds must be positive integers.
+## Running Tests
 
-## Generated files
+Run from the project folder:
 
-- `report.html`: static report; open locally in a browser, no server required.
-- `alerts.json`: alerts, parsing summary and analysis settings.
-- `alerts.csv`: alerts for a spreadsheet; potentially formula-like values are prefixed with an apostrophe.
-- `alerts.db`: SQLite `alerts` table, with parameterized inserts and deterministic alert IDs.
-
-SQLite is a per-run snapshot, not a continuously updated history database. Existing report folders are refused. HTML fields are escaped, and console alert data is JSON-escaped. Files can contain sensitive usernames/IPs: keep reports in a private folder. No network traffic or email is sent; alerts appear in the terminal and saved reports. This version is a batch analyzer, without live file watching, automatic IP blocking, or a web server.
-
-Exit codes: `0` completed; `1` alerts found when `--fail-on-alert` is used; `2` input/output/argument error or no supported events. Malformed lines do not stop a run; always inspect coverage counts. If report writing fails, the partially created output folder may remain; inspect it and choose a new output folder for the retry.
-
-## Run the tests
-
-From the project folder:
-
-```sh
+```bash
 python -m unittest discover -s tests -v
 ```
 
-Tests cover time boundaries, correlation, host/IP separation, suppression and rearming, parsing, malformed records, HTML/CSV output safety, SQLite storage and CLI behavior.
+The included suite contains **15 tests** covering:
 
-## Interpretation and limitations
+- Detection thresholds and time-window boundaries
+- Host and IP separation
+- Successful login correlation
+- Alert suppression and rearming
+- Log parsing and malformed input
+- HTML escaping and CSV formula protection
+- SQLite storage
+- Command-line behavior
 
-Use only logs you own or are authorized to analyze. An alert is a reason to investigate, not proof of an attack. Shared IP addresses, mistyped passwords and normal administrator logins can cause alerts. Slow or distributed attacks may stay below thresholds. Forged, missing or unsupported log lines can hide activity; this tool does not verify log authenticity. It is an educational/portfolio tool, not a replacement for a production SIEM.
+## Exit Codes
 
-Possible next additions: streaming detection with rotation handling, additional parsers, an authenticated dashboard, and optional notifications configured by the operator.
+| Code | Meaning |
+|---|---|
+| `0` | Analysis completed successfully |
+| `1` | Alerts found with `--fail-on-alert` enabled |
+| `2` | Input, output, or argument error, or no supported events found |
+
+Malformed records do not stop analysis. Always check the ignored and malformed line counts.
+
+## Security and Privacy
+
+- Analyze only logs you own or are authorized to access.
+- Keep real logs and reports private.
+- Do not upload real authentication logs to GitHub.
+- The bundled samples contain fictional data.
+- HTML report values are escaped.
+- Potential CSV formulas are prefixed with an apostrophe.
+- SQLite inserts use parameterized queries.
+- Console alert fields are JSON-escaped.
+- Existing output directories are refused to prevent accidental overwrites.
+
+The tool runs locally and sends no emails or network requests.
+
+Review files before committing: `.gitignore` does not automatically exclude every custom report directory or application log filename.
+
+## Limitations
+
+This is an educational and portfolio project, not a replacement for a production SIEM.
+
+- Analyzes saved files; live monitoring is not implemented.
+- Does not automatically block IP addresses.
+- Does not send email or webhook notifications.
+- Legitimate activity can trigger alerts.
+- Slow or distributed attacks may remain below detection thresholds.
+- Does not verify log authenticity.
+- Holds parsed events in memory.
+- Does not preserve detection state between separate runs.
+
+## Future Improvements
+
+- Live log monitoring
+- Log rotation support
+- Additional log formats
+- Optional email and webhook alerts
+- Authenticated dashboard
+- Persistent detection state
+
+## Contributing
+
+Bug reports and improvements are welcome.
+
+When reporting an issue, include:
+
+- The command you ran
+- The expected and actual results
+- A sanitized example log line, if relevant
+
+Remove personal information and secrets before sharing logs. Run the test suite before submitting changes.
